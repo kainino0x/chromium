@@ -318,30 +318,6 @@ class WasmTableObject
   TQ_OBJECT_CONSTRUCTORS(WasmTableObject)
 };
 
-class WasmMemoryMapDescriptor
-    : public TorqueGeneratedWasmMemoryMapDescriptor<WasmMemoryMapDescriptor,
-                                                    JSObject> {
- public:
-  V8_EXPORT_PRIVATE static MaybeDirectHandle<WasmMemoryMapDescriptor>
-  NewFromAnonymous(Isolate* isolate, size_t length);
-
-  V8_EXPORT_PRIVATE static DirectHandle<WasmMemoryMapDescriptor>
-  NewFromFileDescriptor(
-      Isolate* isolate,
-      v8::WasmMemoryMapDescriptor::WasmFileDescriptor file_descriptor);
-
-  // Returns the number of bytes that got mapped into the WebAssembly.Memory.
-  V8_EXPORT_PRIVATE size_t MapDescriptor(DirectHandle<WasmMemoryObject> memory,
-                                         size_t offset);
-
-  // Returns `false` if an error occurred, otherwise `true`.
-  V8_EXPORT_PRIVATE bool UnmapDescriptor();
-
-  class BodyDescriptor;
-
-  TQ_OBJECT_CONSTRUCTORS(WasmMemoryMapDescriptor)
-};
-
 // Representation of a WebAssembly.Memory JavaScript-level object.
 class WasmMemoryObject
     : public TorqueGeneratedWasmMemoryObject<WasmMemoryObject, JSObject> {

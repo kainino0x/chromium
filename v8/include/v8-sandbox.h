@@ -54,6 +54,7 @@ enum class CppHeapPointerTag : uint16_t {
    */
 
   kDefaultTag = 0x7000,
+  kWasmMemoryMapDescriptorTag = 0x7001,
 
   kZappedEntryTag = 0x7ffd,
   kEvacuationEntryTag = 0x7ffe,

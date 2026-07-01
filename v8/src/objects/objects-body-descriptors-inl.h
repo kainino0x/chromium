@@ -1034,17 +1034,6 @@ class WasmTypeInfo::BodyDescriptor final : public BodyDescriptorBase {
   }
 };
 
-class WasmMemoryMapDescriptor::BodyDescriptor : public BodyDescriptorBase {
- public:
-  static inline void IterateBody(Tagged<Map> map, Tagged<HeapObject> obj,
-                                 int object_size, ObjectVisitor* v) {
-    IterateMaybeWeakPointer(obj, kMemoryOffset, v);
-  }
-
-  static inline int SizeOf(Tagged<Map> map, Tagged<HeapObject> object) {
-    return map->instance_size();
-  }
-};
 
 class WasmInstanceObject::BodyDescriptor final : public BodyDescriptorBase {
  public:

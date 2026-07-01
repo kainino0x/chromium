@@ -130,7 +130,7 @@ class RegisteredExtension {
   V(PrimitiveArrayToLocal, FixedArray, PrimitiveArray)                  \
   V(ToLocal, ScriptOrModule, ScriptOrModule)                            \
   V(CppHeapExternalToLocal, CppHeapExternalObject, CppHeapExternal)     \
-  IF_WASM(V, ToLocal, WasmMemoryMapDescriptor, WasmMemoryMapDescriptor) \
+  IF_WASM(V, ToLocal, WasmMemoryObject, WasmMemoryObject)               \
   IF_WASM(V, ToLocal, WasmModuleObject, WasmModuleObject)
 
 #define TO_LOCAL_NAME_LIST(V) \
@@ -206,7 +206,6 @@ class RegisteredExtension {
   V(FixedArray, FixedArray)                                    \
   V(ModuleRequest, ModuleRequest)                              \
   V(CppHeapExternal, CppHeapExternalObject)                    \
-  IF_WASM(V, WasmMemoryMapDescriptor, WasmMemoryMapDescriptor) \
   IF_WASM(V, WasmMemoryObject, WasmMemoryObject)
 
 class Utils {

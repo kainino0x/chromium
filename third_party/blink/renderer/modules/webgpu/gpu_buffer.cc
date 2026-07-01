@@ -317,7 +317,7 @@ v8::Local<v8::Value> GPUBuffer::getMMapDescriptor(
 
 void GPUBuffer::unmap(v8::Isolate* isolate) {
   if (!mmap_descriptor_.IsEmpty()) {
-    mmap_descriptor_.Get(isolate)->Unmap();
+    v8::WasmMemoryMapDescriptor::Unmap(isolate, mmap_descriptor_.Get(isolate));
     mmap_descriptor_.Reset();
   }
 
