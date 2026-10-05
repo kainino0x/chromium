@@ -34,12 +34,40 @@
 
 namespace v8::internal::wasm {
 
+#if V8_TARGET_OS_WIN && defined(V8_ENABLE_SANDBOX)
+namespace {
+
+bool SetPersistentMappingProtection(DirectHandle<WasmMemoryObject> memory,
+                                    size_t offset, size_t size,
+                                    DWORD protection) {
+  std::shared_ptr<BackingStore> backing_store = memory->backing_store();
+  CHECK_GT(size, 0);
+  CHECK_GE(size + offset, size);
+  CHECK_LE(size + offset, backing_store->byte_length());
+  uint8_t* target =
+      reinterpret_cast<uint8_t*>(backing_store->buffer_start()) + offset;
+  DWORD old_protection;
+  if (!VirtualProtect(target, size, protection, &old_protection)) {
+    DWORD error = GetLastError();
+    v8::base::OS::PrintError(
+        "VirtualProtect(%p, %zu, %lu) failed: %lu\n", target, size,
+        static_cast<unsigned long>(protection),
+        static_cast<unsigned long>(error));
+    return false;
+  }
+  return true;
+}
+
+}  // namespace
+#endif  // V8_TARGET_OS_WIN && defined(V8_ENABLE_SANDBOX)
+
 WasmMemoryMapDescriptor::WasmMemoryMapDescriptor(PlatformFileDescriptor fd,
                                                  size_t size,
                                                  FdOwnership fd_ownership)
     : file_descriptor_(fd), size_(size), fd_ownership_(fd_ownership) {}
 
 WasmMemoryMapDescriptor::~WasmMemoryMapDescriptor() {
+  CHECK(ReleasePersistentMapping());
   mapped_memory_.Reset();
 #if V8_TARGET_OS_LINUX || V8_TARGET_OS_ANDROID
   // TODO(crbug.com/339678654): Define a constant somewhere in the platform
@@ -58,6 +86,43 @@ WasmMemoryMapDescriptor::~WasmMemoryMapDescriptor() {
 #endif
 }
 
+bool WasmMemoryMapDescriptor::MatchesFileDescriptor(
+    PlatformFileDescriptor fd) const {
+#if V8_TARGET_OS_WIN
+  // Resolve dynamically to avoid introducing a new import-library dependency.
+  using CompareHandles = BOOL(WINAPI*)(HANDLE, HANDLE);
+  static auto compare_handles = reinterpret_cast<CompareHandles>(
+      GetProcAddress(GetModuleHandleW(L"kernelbase.dll"),
+                     "CompareObjectHandles"));
+  CHECK_NOT_NULL(compare_handles);
+  return compare_handles(file_descriptor_, fd);
+#else
+  return false;
+#endif
+}
+
+bool WasmMemoryMapDescriptor::ReleasePersistentMapping() {
+#if V8_TARGET_OS_WIN && defined(V8_ENABLE_SANDBOX)
+  if (v8_flags.wasm_memory_map_persistent && persistent_backing_store_) {
+    uint8_t* target = reinterpret_cast<uint8_t*>(
+                          persistent_backing_store_->buffer_start()) +
+                      offset_;
+    if (!persistent_address_space_->UnmapSharedPagesInPlace(
+            reinterpret_cast<uintptr_t>(target), size_,
+            v8::PagePermissions::kReadWrite)) {
+      v8::base::OS::PrintError("Failed to release persistent mapping at %p\n",
+                              target);
+      return false;
+    }
+    persistent_backing_store_.reset();
+    persistent_address_space_ = nullptr;
+    mapping_active_ = false;
+    mapped_memory_.Reset();
+  }
+#endif
+  return true;
+}
+
 void WasmMemoryMapDescriptor::Trace(cppgc::Visitor* visitor) const {
   v8::Object::Wrappable::Trace(visitor);
 }
@@ -67,6 +132,15 @@ v8::Local<v8::Object> WasmMemoryMapDescriptor::NewFromFileDescriptor(
     v8::Isolate* isolate, PlatformFileDescriptor fd, size_t size,
     v8::Local<v8::Object> wrapper, FdOwnership fd_ownership) {
   CHECK(v8_flags.experimental_wasm_memory_control);
+#if V8_TARGET_OS_WIN
+  if (fd_ownership == FdOwnership::kFdOwnedByEmbedder) {
+    HANDLE owned_fd;
+    CHECK(DuplicateHandle(GetCurrentProcess(), fd, GetCurrentProcess(),
+                          &owned_fd, 0, FALSE, DUPLICATE_SAME_ACCESS));
+    fd = owned_fd;
+    fd_ownership = FdOwnership::kAnonymousFdOwnedByV8;
+  }
+#endif
   auto* cpp_descriptor = cppgc::MakeGarbageCollected<WasmMemoryMapDescriptor>(
       isolate->GetCppHeap()->GetAllocationHandle(), fd, size, fd_ownership);
 
@@ -122,16 +196,36 @@ v8::MaybeLocal<v8::Object> WasmMemoryMapDescriptor::NewFromAnonymous(
   // Windows.
   USE(length);
 #endif
-  return {};
 }
-
-#define MODE_PERSISTENT 1
-#define MODE_PERSISTENT_MPROTECT 1
 
 size_t WasmMemoryMapDescriptor::Map(v8::Isolate* isolate,
                                     DirectHandle<WasmMemoryObject> memory,
                                     size_t offset) {
   CHECK(v8_flags.experimental_wasm_memory_control);
+#if V8_TARGET_OS_WIN && defined(V8_ENABLE_SANDBOX)
+  if (persistent_backing_store_) {
+    if (mapping_active_) {
+      isolate->ThrowError("WasmMemoryMapDescriptor::Map called more than once");
+      return 0;
+    }
+    if (!mapped_memory_.IsEmpty() &&
+        *Utils::OpenDirectHandle(*mapped_memory_.Get(isolate)) == *memory &&
+        persistent_backing_store_ == memory->backing_store() &&
+        offset_ == offset) {
+      if (v8_flags.wasm_memory_map_protect_persistent &&
+          !SetPersistentMappingProtection(memory, offset_, size_,
+                                          PAGE_READWRITE)) {
+        return 0;
+      }
+      mapping_active_ = true;
+      return size_;
+    }
+    if (!ReleasePersistentMapping()) {
+      return 0;
+    }
+  }
+#endif  // V8_TARGET_OS_WIN && defined(V8_ENABLE_SANDBOX)
+
   if (!mapped_memory_.IsEmpty()) {
     isolate->ThrowError("WasmMemoryMapDescriptor::Map called more than once");
     return 0;
@@ -154,25 +248,30 @@ size_t WasmMemoryMapDescriptor::Map(v8::Isolate* isolate,
 
   uint8_t* target =
       reinterpret_cast<uint8_t*>(backing_store->buffer_start()) + offset;
-  CHECK_EQ(reinterpret_cast<uintptr_t>(target) %
+  DCHECK_EQ(reinterpret_cast<uintptr_t>(target) %
                GetArrayBufferPageAllocator()->AllocatePageSize(),
            0);
 
-#if (V8_TARGET_OS_LINUX || V8_TARGET_OS_ANDROID) && MODE_PERSISTENT
+#if V8_TARGET_OS_LINUX || V8_TARGET_OS_ANDROID
   static auto ah_size = new std::unordered_map<uintptr_t, size_t>{};
-  if (auto it = ah_size->find(reinterpret_cast<uintptr_t>(target));
-      it != ah_size->end()) {
-    size_t size = it->second;
-#if MODE_PERSISTENT_MPROTECT
-    mprotect(target, size, PROT_READ | PROT_WRITE);
-#endif  // MODE_PERSISTENT_MPROTECT
-    mapped_memory_.Reset(isolate, Utils::ToLocal(memory));
-    mapped_memory_.SetWeak();
-    size_ = size;
-    offset_ = offset;
-    return size;
+  if (v8_flags.wasm_memory_map_persistent) {
+    if (auto it = ah_size->find(reinterpret_cast<uintptr_t>(target));
+        it != ah_size->end()) {
+      size_t size = it->second;
+      if (v8_flags.wasm_memory_map_protect_persistent &&
+          mprotect(target, size, PROT_READ | PROT_WRITE) == -1) {
+        v8::base::OS::PrintError("mprotect(%p, %zu, RW) failed: %d %s\n",
+                                 target, size, errno, strerror(errno));
+        return 0;
+      }
+      mapped_memory_.Reset(isolate, Utils::ToLocal(memory));
+      mapped_memory_.SetWeak();
+      size_ = size;
+      offset_ = offset;
+      return size;
+    }
   }
-#endif  // (V8_TARGET_OS_LINUX || V8_TARGET_OS_ANDROID) && MODE_PERSISTENT
+#endif  // V8_TARGET_OS_LINUX || V8_TARGET_OS_ANDROID
 
 #if V8_TARGET_OS_LINUX || V8_TARGET_OS_ANDROID
   struct stat stat_for_size;
@@ -183,9 +282,6 @@ size_t WasmMemoryMapDescriptor::Map(v8::Isolate* isolate,
   size_t size = RoundUp(stat_for_size.st_size,
                         GetArrayBufferPageAllocator()->AllocatePageSize());
 
-#if MODE_PERSISTENT
-  ah_size->insert({reinterpret_cast<uintptr_t>(target), size});
-#endif  // MODE_PERSISTENT
   if (size + offset < size) {
     // Overflow
     return 0;
@@ -210,6 +306,9 @@ size_t WasmMemoryMapDescriptor::Map(v8::Isolate* isolate,
   }
   CHECK_NE(ret_val, MAP_FAILED);
   CHECK_EQ(ret_val, target);
+  if (v8_flags.wasm_memory_map_persistent) {
+    ah_size->insert({reinterpret_cast<uintptr_t>(target), size});
+  }
 #elif V8_TARGET_OS_WIN && defined(V8_ENABLE_SANDBOX)
   size_t size =
       RoundUp(size_, GetArrayBufferPageAllocator()->AllocatePageSize());
@@ -222,7 +321,7 @@ size_t WasmMemoryMapDescriptor::Map(v8::Isolate* isolate,
     if (probe == nullptr) {
       return 0;
     }
-    MEMORY_BASIC_INFORMATION mbi;
+    MEMORY_BASIC_INFORMATION mbi{};
     bool queried = VirtualQuery(probe, &mbi, sizeof(mbi)) != 0;
     size_t region_size = mbi.RegionSize;
     UnmapViewOfFile(probe);
@@ -251,6 +350,7 @@ size_t WasmMemoryMapDescriptor::Map(v8::Isolate* isolate,
                                                ->sandbox()
                                                ->address_space();
   if (!IsAligned(offset, address_space->allocation_granularity())) {
+    CHECK(false);
     return 0;
   }
   if (!address_space->MapSharedPagesInPlace(
@@ -260,11 +360,17 @@ size_t WasmMemoryMapDescriptor::Map(v8::Isolate* isolate,
           /*offset=*/0)) {
     return 0;
   }
+  if (v8_flags.wasm_memory_map_persistent) {
+    persistent_backing_store_ = backing_store;
+    persistent_address_space_ = address_space;
+    mapping_active_ = true;
+  }
 #endif  // V8_TARGET_OS_WIN && defined(V8_ENABLE_SANDBOX)
   mapped_memory_.Reset(isolate, Utils::ToLocal(memory));
   mapped_memory_.SetWeak();
   size_ = size;
   offset_ = offset;
+
   return size;
 #else   // V8_TARGET_OS_LINUX || V8_TARGET_OS_ANDROID || (V8_TARGET_OS_WIN &&
         // defined(V8_ENABLE_SANDBOX))
@@ -277,6 +383,26 @@ size_t WasmMemoryMapDescriptor::Map(v8::Isolate* isolate,
 
 bool WasmMemoryMapDescriptor::Unmap(v8::Isolate* isolate) {
   CHECK(v8_flags.experimental_wasm_memory_control);
+#if V8_TARGET_OS_WIN && defined(V8_ENABLE_SANDBOX)
+  if (v8_flags.wasm_memory_map_persistent && persistent_backing_store_) {
+    DisallowGarbageCollection no_gc;
+    if (!mapping_active_) return true;
+    if (mapped_memory_.IsEmpty()) {
+      return ReleasePersistentMapping();
+    }
+    if (v8_flags.wasm_memory_map_protect_persistent) {
+      DirectHandle<WasmMemoryObject> memory =
+          Utils::OpenDirectHandle(*mapped_memory_.Get(isolate));
+      if (!SetPersistentMappingProtection(memory, offset_, size_,
+                                          PAGE_NOACCESS)) {
+        return false;
+      }
+    }
+    mapping_active_ = false;
+    return true;
+  }
+#endif  // V8_TARGET_OS_WIN && defined(V8_ENABLE_SANDBOX)
+
   DisallowGarbageCollection no_gc;
   if (mapped_memory_.IsEmpty()) return false;
 
@@ -304,13 +430,15 @@ bool WasmMemoryMapDescriptor::Unmap(v8::Isolate* isolate) {
       reinterpret_cast<uint8_t*>(backing_store->buffer_start()) + offset;
 
 #if V8_TARGET_OS_LINUX || V8_TARGET_OS_ANDROID
-#if MODE_PERSISTENT
-#if MODE_PERSISTENT_MPROTECT
-  mprotect(target, size, PROT_NONE);
-#endif  // MODE_PERSISTENT_MPROTECT
-  (void)target;
-  return true;
-#else   // MODE_PERSISTENT
+  if (v8_flags.wasm_memory_map_persistent) {
+    if (v8_flags.wasm_memory_map_protect_persistent &&
+        mprotect(target, size, PROT_NONE) == -1) {
+      v8::base::OS::PrintError("mprotect(%p, %u, NONE) failed: %d %s\n",
+                               target, size, errno, strerror(errno));
+      return false;
+    }
+    return true;
+  }
 
   void* ret_val = mmap(target, size, PROT_READ | PROT_WRITE,
                        MAP_FIXED | MAP_SHARED | MAP_ANONYMOUS, -1, 0);
@@ -319,7 +447,6 @@ bool WasmMemoryMapDescriptor::Unmap(v8::Isolate* isolate) {
   CHECK_NE(ret_val, MAP_FAILED);
   CHECK_EQ(ret_val, target);
   return true;
-#endif  // MODE_PERSISTENT
 #elif V8_TARGET_OS_WIN && defined(V8_ENABLE_SANDBOX)
   // Restore the previously mapped sub-range to private, zero-initialized pages
   // in place (mirrors the Linux MAP_FIXED | MAP_ANONYMOUS path above).

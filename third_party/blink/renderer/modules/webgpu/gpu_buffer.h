@@ -137,6 +137,7 @@ class GPUBuffer : public DawnObject<wgpu::Buffer> {
   scoped_refptr<WebGPUMailboxBuffer> mailbox_buffer_;
 
   v8::TracedReference<v8::WasmMemoryMapDescriptor> mmap_descriptor_;
+  bool mmap_descriptor_active_ = false;
 };
 
 }  // namespace blink

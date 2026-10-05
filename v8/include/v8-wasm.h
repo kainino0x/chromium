@@ -313,6 +313,13 @@ class V8_EXPORT WasmMemoryMapDescriptor : public Object {
 
   static bool Unmap(Isolate* isolate, Local<Object> wasm_memory_map_descriptor);
 
+  // Temporary persistent-mapping experiment: identify a retained backing
+  // section and restore private Wasm pages before destroying its GPU buffer.
+  static bool MatchesFileDescriptor(Isolate* isolate, Local<Object> descriptor,
+                                   WasmFileDescriptor fd);
+  static bool ReleasePersistentMapping(Isolate* isolate,
+                                       Local<Object> descriptor);
+
   static size_t Map(Isolate* isolate, Local<Object> wasm_memory_map_descriptor,
                     Local<WasmMemoryObject> memory, size_t offset);
 };

@@ -8,6 +8,7 @@
 #include "include/v8-cppgc.h"
 #include "include/v8-object.h"
 #include "include/v8-wasm.h"
+#include <memory>
 #include "src/handles/handles.h"
 #include "src/objects/js-objects.h"
 
@@ -48,6 +49,9 @@ class WasmMemoryMapDescriptor final : public v8::Object::Wrappable {
   // Returns `false` if an error occurred, otherwise `true`.
   bool Unmap(v8::Isolate* isolate);
 
+  bool MatchesFileDescriptor(PlatformFileDescriptor fd) const;
+  bool ReleasePersistentMapping();
+
   // Trace method for Oilpan garbage collection.
   void Trace(cppgc::Visitor* visitor) const override;
 
@@ -62,12 +66,19 @@ class WasmMemoryMapDescriptor final : public v8::Object::Wrappable {
   // can unmap the memory at the same position.
   size_t offset_;
   size_t size_;
-  // When the MemoryMapDescriptor was created from an anonymous file descriptor,
-  // we should close the file descriptor in the destructor.
+  // Own anonymous file descriptors and duplicated embedder handles on Windows;
+  // close them in the destructor.
   FdOwnership fd_ownership_;
 
   // Weak reference to the mapped WasmMemoryObject.
   v8::Global<v8::WasmMemoryObject> mapped_memory_;
+
+#if V8_TARGET_OS_WIN && defined(V8_ENABLE_SANDBOX)
+  // Keep the allocation alive until its retained view is explicitly released.
+  std::shared_ptr<BackingStore> persistent_backing_store_;
+  v8::VirtualAddressSpace* persistent_address_space_ = nullptr;
+  bool mapping_active_ = false;
+#endif
 };
 
 }  // namespace v8::internal::wasm

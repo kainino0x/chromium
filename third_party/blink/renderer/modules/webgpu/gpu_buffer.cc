@@ -302,6 +302,17 @@ v8::Local<v8::Value> GPUBuffer::getMMapDescriptor(
 #elif BUILDFLAG(IS_FUCHSIA)
 #error "Not implemented"
 #elif BUILDFLAG(IS_WIN)
+  if (!mmap_descriptor_.IsEmpty()) {
+    auto cached = mmap_descriptor_.Get(script_state->GetIsolate());
+    if (v8::WasmMemoryMapDescriptor::MatchesFileDescriptor(
+            script_state->GetIsolate(), cached, handle)) {
+      mmap_descriptor_active_ = true;
+      return cached;
+    }
+    CHECK(v8::WasmMemoryMapDescriptor::ReleasePersistentMapping(
+        script_state->GetIsolate(), cached));
+    mmap_descriptor_.Reset();
+  }
   auto mmap_descriptor =
       v8::WasmMemoryMapDescriptor::New(script_state->GetIsolate(), handle);
 #elif BUILDFLAG(IS_ANDROID)
@@ -313,13 +324,22 @@ v8::Local<v8::Value> GPUBuffer::getMMapDescriptor(
 #endif
 
   mmap_descriptor_.Reset(script_state->GetIsolate(), mmap_descriptor);
+  mmap_descriptor_active_ = true;
   return mmap_descriptor;
 }
 
 void GPUBuffer::unmap(v8::Isolate* isolate) {
-  if (!mmap_descriptor_.IsEmpty()) {
+  if (!mmap_descriptor_.IsEmpty() && mmap_descriptor_active_) {
+#if BUILDFLAG(IS_WIN)
+    CHECK(v8::WasmMemoryMapDescriptor::Unmap(isolate,
+                                          mmap_descriptor_.Get(isolate)));
+#else
     v8::WasmMemoryMapDescriptor::Unmap(isolate, mmap_descriptor_.Get(isolate));
+#endif
+#if !BUILDFLAG(IS_WIN)
     mmap_descriptor_.Reset();
+#endif
+    mmap_descriptor_active_ = false;
   }
 
   ResetMappingState(isolate);
@@ -335,6 +355,13 @@ void GPUBuffer::unmap(v8::Isolate* isolate) {
 
 void GPUBuffer::destroy(v8::Isolate* isolate) {
   this->unmap(isolate);
+#if BUILDFLAG(IS_WIN)
+  if (!mmap_descriptor_.IsEmpty()) {
+    CHECK(v8::WasmMemoryMapDescriptor::ReleasePersistentMapping(
+        isolate, mmap_descriptor_.Get(isolate)));
+    mmap_descriptor_.Reset();
+  }
+#endif
 
   if (mailbox_buffer_) {
     DissociateMailbox();

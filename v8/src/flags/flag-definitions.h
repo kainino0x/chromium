@@ -1948,6 +1948,14 @@ DEFINE_BOOL(trace_wasm_memory, false,
             "print all memory updates performed in wasm code")
 DEFINE_BOOL(trace_wasm_globals, false,
             "print all global variable updates performed in wasm code")
+DEFINE_TEST_ONLY_FLAG(
+    wasm_memory_map_persistent,
+    "retain WebAssembly memory mappings after unmap for performance testing")
+DEFINE_TEST_ONLY_FLAG(
+    wasm_memory_map_protect_persistent,
+    "protect retained WebAssembly memory mappings while unmapped")
+DEFINE_IMPLICATION(wasm_memory_map_protect_persistent,
+                   wasm_memory_map_persistent)
 // Fuzzers use {wasm_tier_mask_for_testing} and {wasm_debug_mask_for_testing}
 // together with {liftoff} and {no_wasm_tier_up} to force some functions to be
 // compiled with TurboFan or for debug.

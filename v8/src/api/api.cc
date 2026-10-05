@@ -8877,6 +8877,44 @@ bool WasmMemoryMapDescriptor::Unmap(v8::Isolate* v8_isolate,
 }
 
 // static
+bool WasmMemoryMapDescriptor::MatchesFileDescriptor(
+    Isolate* isolate, Local<Object> wrapper, WasmFileDescriptor fd) {
+#if V8_ENABLE_WEBASSEMBLY
+  CHECK(i::v8_flags.experimental_wasm_memory_control);
+  auto* descriptor =
+      v8::Object::Unwrap<i::wasm::WasmMemoryMapDescriptor::kPointerTag,
+                         i::wasm::WasmMemoryMapDescriptor>(isolate, wrapper);
+  if (descriptor) return descriptor->MatchesFileDescriptor(fd);
+  isolate->ThrowError(
+      "Incompatible receiver, expected WebAssembly.MemoryMapDescriptor");
+  return false;
+#else
+  Utils::ApiCheck(false, "WasmMemoryMapDescriptor::MatchesFileDescriptor",
+                 "WebAssembly support is not enabled");
+  UNREACHABLE();
+#endif
+}
+
+// static
+bool WasmMemoryMapDescriptor::ReleasePersistentMapping(
+    Isolate* isolate, Local<Object> wrapper) {
+#if V8_ENABLE_WEBASSEMBLY
+  CHECK(i::v8_flags.experimental_wasm_memory_control);
+  auto* descriptor =
+      v8::Object::Unwrap<i::wasm::WasmMemoryMapDescriptor::kPointerTag,
+                         i::wasm::WasmMemoryMapDescriptor>(isolate, wrapper);
+  if (descriptor) return descriptor->ReleasePersistentMapping();
+  isolate->ThrowError(
+      "Incompatible receiver, expected WebAssembly.MemoryMapDescriptor");
+  return false;
+#else
+  Utils::ApiCheck(false, "WasmMemoryMapDescriptor::ReleasePersistentMapping",
+                 "WebAssembly support is not enabled");
+  UNREACHABLE();
+#endif
+}
+
+// static
 v8::ArrayBuffer::Allocator* v8::ArrayBuffer::Allocator::NewDefaultAllocator() {
 #ifdef V8_ENABLE_SANDBOX
   return new ArrayBufferAllocator(i::IsolateGroup::GetDefault());
