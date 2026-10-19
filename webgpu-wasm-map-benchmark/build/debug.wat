@@ -11,7 +11,7 @@
  (type $9 (func (param i32 i32 i32 i32 i32)))
  (import "env" "abort" (func $~lib/builtins/abort (param i32 i32 i32 i32)))
  (global $assembly/index/rgbaAllocations i32 (i32.const 64))
- (global $assembly/index/kPageSize i32 (i32.const 4096))
+ (global $assembly/index/kPageSize i32 (i32.const 65536))
  (global $~lib/rt/tlsf/ROOT (mut i32) (i32.const 0))
  (global $~lib/native/ASC_LOW_MEMORY_LIMIT i32 (i32.const 0))
  (global $~lib/shared/runtime/Runtime.Stub i32 (i32.const 0))

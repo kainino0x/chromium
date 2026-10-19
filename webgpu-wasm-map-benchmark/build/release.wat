@@ -1634,7 +1634,7 @@
    local.get $0
    i32.const 2
    i32.shl
-   i32.const 4096
+   i32.const 65536
    i32.add
    call $~lib/rt/tlsf/allocateBlock
    i32.const 4
@@ -1692,10 +1692,10 @@
    global.set $~lib/memory/__stack_pointer
    local.get $1
    f64.convert_i32_u
-   f64.const 0.000244140625
+   f64.const 0.0000152587890625
    f64.mul
    f64.ceil
-   f64.const 4096
+   f64.const 65536
    f64.mul
    i32.trunc_sat_f64_u
    return

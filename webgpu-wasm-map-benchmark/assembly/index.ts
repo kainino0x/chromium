@@ -1,6 +1,6 @@
 const rgbaAllocations: usize[] = [];
 
-const kPageSize: usize = 4096;
+const kPageSize: usize = 65536;
 function roundUpToPageSize(n: usize): usize {
   return usize(Math.ceil(f64(n) / kPageSize) * kPageSize);
 }
