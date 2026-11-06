@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>KTX2 Wasm to WebGPU Streaming Upload Benchmark</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: #0d0f12;
+        color: #e8eaed;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      #layout {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        width: calc(100vw - 480px - 32px);
+        min-width: 520px;
+      }
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 600;
+        color: #ffffff;
+      }
+      header a {
+        color: #8ab4f8;
+        text-decoration: none;
+        font-size: 13px;
+      }
+      header a:hover {
+        text-decoration: underline;
+      }
+      #perf-card {
+        background: #161a20;
+        border: 1px solid #2d333b;
+        border-radius: 8px;
+        padding: 12px 14px;
+      }
+      #perf-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      #status-badge {
+        font-size: 13px;
+        font-weight: 600;
+        color: #81c995;
+      }
+      #status-badge.paused {
+        color: #fdd663;
+      }
+      .btn-row {
+        display: flex;
+        gap: 8px;
+      }
+      button.action-btn {
+        background: #262c36;
+        color: #e8eaed;
+        border: 1px solid #444c56;
+        border-radius: 5px;
+        padding: 5px 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      button.action-btn:hover {
+        background: #323a46;
+      }
+      #perf-readout {
+        margin: 0;
+        padding: 10px 12px;
+        background: #0b0d10;
+        border: 1px solid #22272e;
+        border-radius: 6px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 12.5px;
+        line-height: 1.48;
+        color: #e6edf3;
+        white-space: pre;
+        overflow-x: auto;
+        user-select: text;
+      }
+      #canvas-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      #canvas-caption {
+        font-size: 12px;
+        color: #9aa0a6;
+      }
+      #cvs {
+        width: 100%;
+        max-height: 52vh;
+        object-fit: contain;
+        background: #050608;
+        border: 2px solid #2d333b;
+        border-radius: 6px;
+      }
+      /* Tweakpane sidebar */
+      .tp-dfwv {
+        width: 460px !important;
+      }
+      .tp-dfwv * {
+        font-size: 11.5pt;
+      }
+      dialog {
+        background: #1f1315;
+        color: #ffdce0;
+        border: 1px solid #f85149;
+        border-radius: 8px;
+        max-width: 720px;
+        padding: 16px 20px;
+      }
+    </style>
+    <script type="module" src="js/ktx2_main.js"></script>
+  </head>
+  <body>
+    <div id="panediv"></div>
+    <div id="layout">
+      <header>
+        <h1>KTX2 Wasm &rarr; WebGPU Streaming Upload Benchmark</h1>
+        <a href="index.html">&larr; Synthetic Upload/Download Benchmark</a>
+      </header>
+
+      <section id="perf-card">
+        <div id="perf-toolbar">
+          <span id="status-badge">Initializing WebGPU &amp; Wasm KTX2 transcoder...</span>
+          <div class="btn-row">
+            <button id="btn-copy" class="action-btn" type="button">Copy Results</button>
+            <button id="btn-baseline" class="action-btn" type="button">Pin Baseline</button>
+            <button id="btn-clear-baseline" class="action-btn" type="button" hidden>Clear Baseline</button>
+            <button id="btn-reset" class="action-btn" type="button">Reset Stats</button>
+          </div>
+        </div>
+        <pre id="perf-readout">Loading...</pre>
+      </section>
+
+      <div id="canvas-wrap">
+        <div id="canvas-caption">
+          Live GPU texture preview (streamed via cache-busted HTTP fetches &rarr; Wasm BasisU/Zstd KTX2 decode &rarr; WebGPU GPUTexture)
+        </div>
+        <canvas id="cvs" width="1024" height="1024"></canvas>
+      </div>
+    </div>
+  </body>
+</html>

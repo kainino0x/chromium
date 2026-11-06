@@ -2,6 +2,7 @@
   "type": "module",
   "scripts": {
     "build": "asc assembly/index.ts --target=release && asc assembly/index.ts --target=debug",
+    "build:ktx2": "bash wasm_ktx2/build.sh",
     "start": "servez --local --shared-array-buffers"
   },
   "devDependencies": {
